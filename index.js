@@ -3,7 +3,7 @@
 Version: 1.00
 (c) Maroš Kollár, 2015
 -----------------------------------------------------------------------------
-Author: Maroš Kollár <maros@k-1.com>
+Author: maros@k-1.com <maros@k-1.com>
 Description:
     Collects sensor stats in an InfluxDB
 
@@ -17,10 +17,10 @@ function InfluxDbStats (id, controller) {
     // Call superconstructor first (AutomationModule)
     InfluxDbStats.super_.call(this, id, controller);
     
-    this.interval       = undefined;
-    this.url            = undefined;
-    this.langfile       = undefined;
-    this.commandClass   = 0x80;
+    this.interval   = undefined;
+    this.callbacks  = {};
+    this.url        = undefined;
+    this.langfile   = undefined;
 }
 
 inherits(InfluxDbStats, AutomationModule);
@@ -49,27 +49,51 @@ InfluxDbStats.prototype.init = function (config) {
         self.url = self.url + '&p=' + encodeURIComponent(self.config.password);
     }
     
+    _.each(self.config.devices,function(deviceId){
+        // Build, register and call check callback
+        var device  = self.controller.devices.get(deviceId);
+    });
+    
     if (typeof(self.config.interval) !== 'undefined') {
-        var interval = parseInt(self.config.interval,10) * 60 * 1000;
+        var interval = parseInt(self.config.interval) * 60 * 1000;
         console.log('[InfluxDb]'+self.url+' - '+interval);
         self.interval = setInterval(_.bind(self.updateAll,self), interval);
     }
     
-    self.handleUpdate = _.bind(self.updateDevice,self);
-    self.controller.devices.on("change:metrics:level",self.handleUpdate);
+    setTimeout(_.bind(self.initCallback,self),30 * 1000);
+    //self.updateCalculation();
+};
+
+InfluxDbStats.prototype.initCallback = function() {
+    var self = this;
+    
+    _.each(self.config.devices,function(deviceId){
+        // Build, register and call check callback
+        var device  = self.controller.devices.get(deviceId);
+        if (device == 'null') {
+            console.error('[InfluxDbStats] Device not found '+deviceId);
+        } else {
+            var callback = _.bind(self.updateDevice,self,deviceId);
+            self.callbacks[deviceId] = callback;
+            device.on('change:metrics:level',callback);
+        }
+    });
 };
 
 InfluxDbStats.prototype.stop = function () {
     var self = this;
     
+    // Remove callbacks
+    _.each(self.config.devices,function(deviceId){
+        self.controller.devices.off(deviceId, 'change:metrics:level', self.callbacks[deviceId]);
+        self.callbacks[deviceId] = undefined;
+    });
+    self.callbacks = {};
+    
     // Remove interval
     if (typeof(self.interval) !== 'undefined') {
         clearInterval(self.interval);
     }
-    
-    // Remove listener
-    self.controller.devices.off("change:metrics:level",self.handleUpdate);
-    self.handleUpdate = undefined;
     
     InfluxDbStats.super_.prototype.stop.call(this);
 };
@@ -78,16 +102,14 @@ InfluxDbStats.prototype.stop = function () {
 // --- Module methods
 // ----------------------------------------------------------------------------
 
-InfluxDbStats.prototype.updateDevice = function (vDev) {
+InfluxDbStats.prototype.updateDevice = function (deviceId) {
     var self = this;
     
-    if (_.intersection(vDev.get('tags'), self.config.tags).length > 0) {
-        // TODO;Ensure that not called too often
-        var lines = [
-            self.collectDevice(vDev.id)
-        ];
-        setTimeout(_.bind(self.sendStats,self,lines),1);
-    }
+    // TODO;Ensure that not called too often
+    var lines = [
+        self.collectDevice(deviceId)
+    ];
+    self.sendStats(lines);
 };
 
 InfluxDbStats.prototype.escapeValue = function (value) {
@@ -96,26 +118,28 @@ InfluxDbStats.prototype.escapeValue = function (value) {
     switch(typeof(value)) {
         case 'number':
             return value;
+            break;
         case 'string':
             return value.replace(/(,|\s+)/g, '\\$1');
+            break;
     }
     return 'null';
 };
 
 
-InfluxDbStats.prototype.collectVirtualDevice = function (deviceId) {
+InfluxDbStats.prototype.collectDevice = function (deviceId) {
     var self    = this;
-    var deviceObject  = self.controller.devices.get(deviceId);
+    var device  = self.controller.devices.get(deviceId);
     
-    var level       = deviceObject.get('metrics:level');
-    var scale       = deviceObject.get('metrics:scaleTitle');
-    var probe       = deviceObject.get('metrics:probeTitle') || deviceObject.get('probeType');
-    var title       = deviceObject.get('metrics:title');
-    var location    = parseInt(deviceObject.get('location'),10);
-    var type        = deviceObject.get('deviceType');
+    var level       = device.get('metrics:level');
+    var scale       = device.get('metrics:scaleTitle');
+    var probe       = device.get('metrics:probeTitle');
+    var title       = device.get('metrics:title');
+    var location    = parseInt(device.get('location'));
+    var type        = device.get('deviceType');
     var room        = _.find(
         self.controller.locations, 
-        function(item){ return (item.id === location); }
+        function(item){ return (item.id === location) }
     );
     if (typeof(room) === 'object') {
         room = room.title;
@@ -130,53 +154,18 @@ InfluxDbStats.prototype.collectVirtualDevice = function (deviceId) {
         ' level=' + self.escapeValue(level);
 };
 
-InfluxDbStats.prototype.collectZwaveDevice = function (deviceIndex,device) {
-    var self    = this;
-    if (typeof(device) === 'undefined') {
-        return;
-    }
-    
-    var deviceData  = device.data;
-    var batteryData = device.instances[0].commandClasses[self.commandClass.toString()];
-    
-    return 'zwave.' + self.escapeValue(deviceIndex) +
-        ',title=' + self.escapeValue(deviceData.givenName.value) +
-        ',type=' + self.escapeValue(deviceData.basicType.value) +
-        ' failed=' + self.escapeValue(deviceData.countFailed.value) +
-        ',failure=' + self.escapeValue(deviceData.failureCount.value) +
-        ',success=' + self.escapeValue(deviceData.countSuccess.value) +
-        ',queue=' + self.escapeValue(deviceData.queueLength.value) +
-        (typeof(batteryData) !== 'undefined' ? ',battery=' + self.escapeValue(batteryData.data.last.value) : '');
-};
-
 InfluxDbStats.prototype.updateAll = function () {
     var self = this;
     
     console.log('[InfluxDB] Update all');
     var lines = [];
-    
-    self.controller.devices.each(function(vDev) {
-        var tags = vDev.get('tags');
-        if (_.intersection(tags, self.config.tags).length > 0) {
-            lines.push(self.collectVirtualDevice(deviceId));
-        }
+    _.each(self.config.devices,function(deviceId){
+        lines.push(self.collectDevice(deviceId));
     });
-    
-    if (global.ZWave) {
-        for (var zwayName in global.ZWave) {
-            var zway = global.ZWave && global.ZWave[zwayName].zway;
-            if (zway) {
-                for(var deviceIndex in zway.devices) {
-                    if (deviceIndex !== 1) {
-                        lines.push(self.collectZwaveDevice(deviceIndex,zway.devices[deviceIndex]));
-                    }
-                }
-            }
-        }
-    }
     
     self.sendStats(lines);
 };
+
 
 InfluxDbStats.prototype.sendStats = function (lines) {
     var self = this;
@@ -185,7 +174,7 @@ InfluxDbStats.prototype.sendStats = function (lines) {
         return;
     }
     var data = lines.join("\n");
-    
+    console.log("[InfluxDB] data: " + data);
     http.request({
         url:    self.url,
         async:  true,
@@ -197,7 +186,7 @@ InfluxDbStats.prototype.sendStats = function (lines) {
             
             self.controller.addNotification(
                 "error", 
-                self.langFile.error,
+                self.langFile.error, 
                 "module", 
                 "InfluxDbStats"
             );

@@ -1,48 +1,51 @@
 {
-   "author" : "Maroš Kollár",
+   "author" : "Javier Pardo Blasco (jpardobl)",
    "category" : "logging",
    "defaults" : {
       "description" : "__description__",
       "title" : "__title__"
    },
    "dependencies" : [],
-   "homepage" : "http://k-1.com",
+   "homepage" : "http://sumara.io",
    "icon" : "icon.png",
-   "maturity" : "stable",
-   "moduleName" : "InfluxDbStats",
+   "maturity" : "unstable",
+   "moduleName" : "InfluxDbEvents",
    "options" : {
       "fields" : {
          "database" : {
-            "label" : "__database_label__",
-            "order": 2
+            "label" : "__database_label__"
          },
-         "tags" : {
-            "helper" : "__tags_helper__",
-            "label" : "__tags_label__",
-            "order": 5
+         "devices" : {
+            "fields" : {
+               "item" : {
+                  "datasource" : "namespaces",
+                  "field" : "optionLabels",
+                  "optionLabels" : "namespaces:devices_sensorMultilevel:deviceName,namespaces:devices_sensorBinary:deviceName,namespaces:devices_switchBinary:deviceName,namespaces:devices_switchMultilevel:deviceName",
+                  "type" : "select"
+               }
+            },
+            "helper" : "__devices_helper__",
+            "label" : "__devices_label__"
          },
          "interval" : {
             "helper" : "__interval_helper__",
-            "label" : "__interval_label__",
-            "order": 6
+            "label" : "__interval_label__"
          },
          "password" : {
-            "label" : "__password_label__",
-            "order": 4
+            "label" : "__password_label__"
          },
          "server" : {
             "helper" : "__server_helper__",
             "label" : "__server_label__",
-            "order": 1
+            "type" : "url"
          },
          "username" : {
-            "label" : "__username_label__",
-            "order": 3
+            "label" : "__username_label__"
          }
       }
    },
    "repository" : {
-      "source" : "https://github.com/maros/Zway-InfluxDbStats",
+      "source" : "https://github.com/jpardobl/Zway-InfluxDbEvents.git",
       "type" : "git"
    },
    "schema" : {
@@ -50,12 +53,13 @@
          "database" : {
             "required" : true
          },
-         "tags" : {
+         "devices" : {
             "items" : {
-                "type": "string",
-                "required" : true
+               "datasource" : "namespaces",
+               "enum" : "namespaces:devices_sensorMultilevel:deviceId,namespaces:devices_sensorBinary:deviceId,namespaces:devices_switchBinary:deviceId,namespaces:devices_switchMultilevel:deviceId",
+               "field" : "enum",
+               "required" : true
             },
-            "uniqueItems": true,
             "type" : "array"
          },
          "interval" : {
@@ -63,6 +67,7 @@
          },
          "password" : {},
          "server" : {
+            "format" : "uri",
             "required" : true
          },
          "username" : {}
@@ -71,5 +76,5 @@
       "type" : "object"
    },
    "singleton" : true,
-   "version" : "1.01"
+   "version" : "0.1"
 }
