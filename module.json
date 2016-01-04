@@ -27,10 +27,6 @@
             "helper" : "__devices_helper__",
             "label" : "__devices_label__"
          },
-         "interval" : {
-            "helper" : "__interval_helper__",
-            "label" : "__interval_label__"
-         },
          "password" : {
             "label" : "__password_label__"
          },
@@ -61,9 +57,6 @@
                "required" : true
             },
             "type" : "array"
-         },
-         "interval" : {
-            "type" : "number"
          },
          "password" : {},
          "server" : {

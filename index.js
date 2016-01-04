@@ -1,11 +1,11 @@
-/*** InfluxDbStats Z-Way HA module *******************************************
+/*** InfluxDbEvents Z-Way HA module *******************************************
 
 Version: 1.00
 (c) Maroš Kollár, 2015
 -----------------------------------------------------------------------------
-Author: maros@k-1.com <maros@k-1.com>
+Author: jpardobl
 Description:
-    Collects sensor stats in an InfluxDB
+    Collects sensor events in an InfluxDB
 
 ******************************************************************************/
 
@@ -13,29 +13,30 @@ Description:
 // --- Class definition, inheritance and setup
 // ----------------------------------------------------------------------------
 
-function InfluxDbStats (id, controller) {
+function InfluxDbEvents (id, controller) {
     // Call superconstructor first (AutomationModule)
-    InfluxDbStats.super_.call(this, id, controller);
+    InfluxDbEvents.super_.call(this, id, controller);
     
-    this.interval   = undefined;
+//    this.interval   = undefined;
     this.callbacks  = {};
     this.url        = undefined;
     this.langfile   = undefined;
 }
 
-inherits(InfluxDbStats, AutomationModule);
+inherits(InfluxDbEvents, AutomationModule);
 
-_module = InfluxDbStats;
+_module = InfluxDbEvents;
 
 // ----------------------------------------------------------------------------
 // --- Module instance initialized
 // ----------------------------------------------------------------------------
 
-InfluxDbStats.prototype.init = function (config) {
-    InfluxDbStats.super_.prototype.init.call(this, config);
+InfluxDbEvents.prototype.init = function (config) {
+    console.log("[InfluxDbEvents] entering init");
+    InfluxDbEvents.super_.prototype.init.call(this, config);
     var self = this;
     
-    self.langFile   = self.controller.loadModuleLang("InfluxDbStats");
+    self.langFile   = self.controller.loadModuleLang("InfluxDbEvents");
     
     self.url = self.config.server
         + ':8086/write'
@@ -48,31 +49,33 @@ InfluxDbStats.prototype.init = function (config) {
     if (typeof(self.config.password) !== 'undefined') {
         self.url = self.url + '&p=' + encodeURIComponent(self.config.password);
     }
-    
     _.each(self.config.devices,function(deviceId){
         // Build, register and call check callback
         var device  = self.controller.devices.get(deviceId);
+        console.log("[InfluxDbEvents] loop init: " + device);
     });
-    
-    if (typeof(self.config.interval) !== 'undefined') {
-        var interval = parseInt(self.config.interval) * 60 * 1000;
-        console.log('[InfluxDb]'+self.url+' - '+interval);
-        self.interval = setInterval(_.bind(self.updateAll,self), interval);
-    }
+    console.log("[InfluxDbEvents] Ended init");
+//    if (typeof(self.config.interval) !== 'undefined') {
+//        var interval = parseInt(self.config.interval) * 60 * 1000;
+//        console.log('[InfluxDb]'+self.url+' - '+interval);
+//        self.interval = setInterval(_.bind(self.updateAll,self), interval);
+//    }
     
     setTimeout(_.bind(self.initCallback,self),30 * 1000);
     //self.updateCalculation();
 };
 
-InfluxDbStats.prototype.initCallback = function() {
+InfluxDbEvents.prototype.initCallback = function() {
     var self = this;
     
     _.each(self.config.devices,function(deviceId){
         // Build, register and call check callback
+        console.log("[InfluxDbEvents] loop initcallback: " + deviceId);
         var device  = self.controller.devices.get(deviceId);
         if (device == 'null') {
-            console.error('[InfluxDbStats] Device not found '+deviceId);
+            console.error('[InfluxDbEvents] Device not found '+deviceId);
         } else {
+            console.log("[InfluxDbEvents] binding on change:metrics:level for device: " + deviceId);
             var callback = _.bind(self.updateDevice,self,deviceId);
             self.callbacks[deviceId] = callback;
             device.on('change:metrics:level',callback);
@@ -80,7 +83,7 @@ InfluxDbStats.prototype.initCallback = function() {
     });
 };
 
-InfluxDbStats.prototype.stop = function () {
+InfluxDbEvents.prototype.stop = function () {
     var self = this;
     
     // Remove callbacks
@@ -91,18 +94,18 @@ InfluxDbStats.prototype.stop = function () {
     self.callbacks = {};
     
     // Remove interval
-    if (typeof(self.interval) !== 'undefined') {
-        clearInterval(self.interval);
-    }
+//    if (typeof(self.interval) !== 'undefined') {
+//        clearInterval(self.interval);
+//    }
     
-    InfluxDbStats.super_.prototype.stop.call(this);
+    InfluxDbEvents.super_.prototype.stop.call(this);
 };
 
 // ----------------------------------------------------------------------------
 // --- Module methods
 // ----------------------------------------------------------------------------
 
-InfluxDbStats.prototype.updateDevice = function (deviceId) {
+InfluxDbEvents.prototype.updateDevice = function (deviceId) {
     var self = this;
     
     // TODO;Ensure that not called too often
@@ -112,7 +115,7 @@ InfluxDbStats.prototype.updateDevice = function (deviceId) {
     self.sendStats(lines);
 };
 
-InfluxDbStats.prototype.escapeValue = function (value) {
+InfluxDbEvents.prototype.escapeValue = function (value) {
     var self = this;
     
     switch(typeof(value)) {
@@ -127,7 +130,7 @@ InfluxDbStats.prototype.escapeValue = function (value) {
 };
 
 
-InfluxDbStats.prototype.collectDevice = function (deviceId) {
+InfluxDbEvents.prototype.collectDevice = function (deviceId) {
     var self    = this;
     var device  = self.controller.devices.get(deviceId);
     
@@ -144,7 +147,10 @@ InfluxDbStats.prototype.collectDevice = function (deviceId) {
     if (typeof(room) === 'object') {
         room = room.title;
     }
-    
+    level = self.parseLevel(level);
+
+    if (scale == undefined || scale == "" ) scale = "B";
+
     return 'device.' + self.escapeValue(deviceId) +
         ',probe=' + self.escapeValue(probe) +
         ',room=' + self.escapeValue(room) +
@@ -154,41 +160,36 @@ InfluxDbStats.prototype.collectDevice = function (deviceId) {
         ' level=' + self.escapeValue(level);
 };
 
-InfluxDbStats.prototype.updateAll = function () {
-    var self = this;
-    
-    console.log('[InfluxDB] Update all');
-    var lines = [];
-    _.each(self.config.devices,function(deviceId){
-        lines.push(self.collectDevice(deviceId));
-    });
-    
-    self.sendStats(lines);
+InfluxDbEvents.prototype.parseLevel = function(level){
+    if ((level - parseFloat( level ) + 1) >= 0) return level;
+    if (level == "off") return 0;
+    if (level == "on") return  1;
+    console.warning("[InfluxDbEvents] Could not parse level: " + level);
+    return "-";
 };
 
-
-InfluxDbStats.prototype.sendStats = function (lines) {
+InfluxDbEvents.prototype.sendStats = function (lines) {
     var self = this;
     
     if (lines.length === 0) {
         return;
     }
     var data = lines.join("\n");
-    console.log("[InfluxDB] data: " + data);
+    console.log("[InfluxDbEvents] data: " + data);
     http.request({
         url:    self.url,
         async:  true,
         method: 'POST',
         data:   data,
         error:  function(response) {
-            console.error('[InfluxDb] Could not post stats');
+            console.error('[InfluxDbEvents] Could not post stats');
             console.logJS(response);
             
             self.controller.addNotification(
                 "error", 
                 self.langFile.error, 
                 "module", 
-                "InfluxDbStats"
+                "InfluxDbEvents"
             );
         }
     });
